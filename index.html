@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Place Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <!-- React + Babel from CDN — no build tools needed -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f0e8; --surface: #fffdf8; --ink: #1a1612; --ink2: #5a5248;
+      --accent: #c4602a; --green: #2a7c6f; --border: #e0d8cc;
+      --shadow: 0 2px 24px rgba(26,22,18,0.08);
+    }
+    html, body, #root { min-height: 100vh; background: var(--bg); }
+    body {
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      color: var(--ink);
+      /* subtle paper texture */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.022'/%3E%3C/svg%3E");
+    }
+
+    /* ── Layout ── */
+    .page { max-width: 780px; margin: 0 auto; padding: 0 20px 60px; }
+
+    /* ── Header ── */
+    .site-header { padding: 48px 0 24px; text-align: center; }
+    .site-title  { font-family: 'Playfair Display', serif; font-size: clamp(2.2rem,5.5vw,3.4rem); color: var(--ink); letter-spacing:-0.02em; line-height:1.1; }
+    .site-title em { color: var(--accent); font-style: italic; }
+    .site-sub    { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--ink2); letter-spacing:0.22em; text-transform:uppercase; margin-top:8px; }
+
+    /* ── Search ── */
+    .search-wrap { display:flex; gap:10px; margin-top:26px; background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:8px 8px 8px 20px; box-shadow:var(--shadow); transition:border-color .2s; }
+    .search-wrap:focus-within { border-color: var(--accent); }
+    .search-wrap.shake { animation: shake .4s ease; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
+    .search-input { flex:1; border:none; outline:none; background:transparent; font-family:'Outfit',sans-serif; font-size:1rem; color:var(--ink); }
+    .search-input::placeholder { color:#b5afa7; }
+    .search-btn { background:var(--accent); color:white; border:none; border-radius:9px; padding:11px 22px; font-family:'Outfit',sans-serif; font-size:.88rem; font-weight:600; cursor:pointer; white-space:nowrap; letter-spacing:.02em; transition:background .2s, transform .1s; }
+    .search-btn:hover  { background:#ae5224; }
+    .search-btn:active { transform:scale(.97); }
+    .search-btn:disabled { background:#c9bfb5; cursor:not-allowed; }
+
+    /* ── Loader ── */
+    .loader-wrap { text-align:center; padding:52px 0; }
+    .spinner { width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 14px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .load-msg { font-family:'IBM Plex Mono',monospace; font-size:.72rem; color:var(--ink2); letter-spacing:.1em; animation:pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* ── Correction banner ── */
+    .banner { background:#f0faf5; border:1.5px solid #b8e8cf; border-radius:10px; padding:11px 16px; margin-top:14px; font-size:.83rem; color:#1a5c3a; }
+    .banner-sub { font-size:.75rem; color:#2a7c5a; margin-top:2px; }
+
+    /* ── Not-found / error card ── */
+    .nf-card { background:var(--surface); border:1.5px solid #e8d8c8; border-radius:16px; padding:34px 24px; margin-top:26px; text-align:center; box-shadow:var(--shadow); }
+    .nf-icon  { font-size:2.6rem; margin-bottom:10px; }
+    .nf-title { font-family:'Playfair Display',serif; font-size:1.4rem; margin-bottom:8px; }
+    .nf-msg   { font-size:.88rem; color:var(--ink2); line-height:1.6; max-width:400px; margin:0 auto; }
+    .nf-label { font-family:'IBM Plex Mono',monospace; font-size:.62rem; letter-spacing:.18em; text-transform:uppercase; color:var(--ink2); margin:18px 0 10px; }
+    .sug-row  { display:flex; gap:9px; justify-content:center; flex-wrap:wrap; }
+    .sug-btn  { background:var(--bg); border:1.5px solid var(--border); border-radius:100px; padding:8px 18px; font-family:'Outfit',sans-serif; font-size:.84rem; font-weight:500; cursor:pointer; transition:border-color .2s, color .2s, background .2s; }
+    .sug-btn:hover { border-color:var(--accent); color:var(--accent); background:#fff5ef; }
+    .retry-btn { background:none; border:none; color:var(--ink2); font-family:'IBM Plex Mono',monospace; font-size:.7rem; letter-spacing:.1em; cursor:pointer; text-decoration:underline; text-underline-offset:3px; margin-top:16px; display:inline-block; }
+    .retry-btn:hover { color:var(--accent); }
+
+    /* ── Place hero ── */
+    .place-hero   { text-align:center; padding:28px 0 18px; border-bottom:1.5px solid var(--border); margin-bottom:24px; }
+    .place-name   { font-family:'Playfair Display',serif; font-size:clamp(1.8rem,4.5vw,2.8rem); letter-spacing:-.02em; line-height:1.1; }
+    .place-region { font-family:'IBM Plex Mono',monospace; font-size:.68rem; color:var(--ink2); letter-spacing:.2em; text-transform:uppercase; margin-top:5px; }
+
+    /* ── Live time pills ── */
+    .time-bar { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:16px; flex-wrap:wrap; }
+    .pill-dark  { background:var(--ink); color:white; border-radius:100px; padding:7px 20px; font-family:'IBM Plex Mono',monospace; font-size:.95rem; letter-spacing:.07em; font-weight:500; }
+    .pill-light { background:var(--surface); border:1.5px solid var(--border); color:var(--ink2); border-radius:100px; padding:7px 16px; font-family:'IBM Plex Mono',monospace; font-size:.72rem; letter-spacing:.05em; }
+    .pill-green { background:var(--green); color:white; border-radius:100px; padding:5px 13px; font-family:'IBM Plex Mono',monospace; font-size:.65rem; letter-spacing:.07em; }
+
+    /* ── Cards grid ── */
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .grid2 .full { grid-column:1/-1; }z
+    @media(max-width:560px) { .grid2 { grid-template-columns:1fr; } .grid2 .full { grid-column:1; } }
+
+    .card { background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:20px 22px; box-shadow:var(--shadow); }
+    .card-head { display:flex; align-items:center; gap:8px; margin-bottom:15px; padding-bottom:11px; border-bottom:1px solid var(--border); font-family:'IBM Plex Mono',monospace; font-size:.63rem; letter-spacing:.2em; text-transform:uppercase; color:var(--ink2); }
+
+    /* ── Weather card ── */
+    .w-big   { display:flex; align-items:center; gap:14px; margin-bottom:15px; }
+    .w-emoji { font-size:2.9rem; line-height:1; }
+    .w-temp  { font-family:'Playfair Display',serif; font-size:2.9rem; line-height:1; color:var(--accent); }
+    .w-cond  { font-size:.88rem; color:var(--ink2); margin-top:3px; text-transform:capitalize; }
+    .w-grid  { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .w-stat  { background:var(--bg); border-radius:9px; padding:9px 12px; }
+    .w-sl    { font-family:'IBM Plex Mono',monospace; font-size:.54rem; color:var(--ink2); letter-spacing:.14em; text-transform:uppercase; margin-bottom:2px; }
+    .w-sv    { font-size:.92rem; font-weight:600; color:var(--ink); }
+
+    /* ── Location rows ── */
+    .info-row { display:flex; justify-content:space-between; align-items:baseline; padding:8px 0; border-bottom:1px solid var(--border); gap:12px; }
+    .info-row:last-child { border-bottom:none; }
+    .ik { font-family:'IBM Plex Mono',monospace; font-size:.65rem; color:var(--ink2); letter-spacing:.07em; flex-shrink:0; }
+    .iv { font-size:.85rem; font-weight:500; color:var(--ink); text-align:right; }
+
+    /* ── Facts list ── */
+    .facts { list-style:none; }
+    .facts li { padding:8px 0 8px 18px; border-bottom:1px solid var(--border); font-size:.85rem; color:var(--ink); line-height:1.5; position:relative; }
+    .facts li:last-child { border-bottom:none; }
+    .facts li::before { content:'—'; position:absolute; left:0; color:var(--accent); font-family:'IBM Plex Mono',monospace; }
+
+    /* ── About text ── */
+    .about { font-family:'Playfair Display',serif; font-style:italic; font-size:.96rem; line-height:1.75; color:var(--ink); }
+    .about p { margin-bottom:10px; } .about p:last-child { margin-bottom:0; }
+
+    /* ── Animations ── */
+    .fade-up { animation:fadeUp .45s ease both; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+  const { useState, useEffect, useRef } = React;
+
+  // ─────────────────────────────────────────
+  //  ★  PASTE YOUR OPENWEATHERMAP KEY BELOW
+  // ─────────────────────────────────────────
+  const OWM_KEY = "025f47508f4a66fc1594cf262eff8211";
+  // ─────────────────────────────────────────
+
+  /* ── Helpers ── */
+  function weatherEmoji(code) {
+    if (!code) return "🌡️";
+    if (code >= 200 && code < 300) return "⛈️";
+    if (code >= 300 && code < 400) return "🌦️";
+    if (code >= 500 && code < 600) return "🌧️";
+    if (code >= 600 && code < 700) return "❄️";
+    if (code >= 700 && code < 800) return "🌫️";
+    if (code === 800) return "☀️";
+    if (code === 801) return "🌤️";
+    if (code === 802) return "⛅";
+    if (code >= 803) return "☁️";
+    return "🌡️";
+  }
+
+  function fmtTime(date, tz, opts) {
+    try { return date.toLocaleString("en-GB", { timeZone: tz, ...opts }); }
+    catch { return date.toLocaleString("en-GB", opts); }
+  }
+
+  /* ── Live Clock ── */
+  function LiveClock({ timezone }) {
+    const [now, setNow] = useState(new Date());
+    useEffect(() => {
+      const t = setInterval(() => setNow(new Date()), 1000);
+      return () => clearInterval(t);
+    }, []);
+    return (
+      <div className="time-bar">
+        <span className="pill-dark">
+          {fmtTime(now, timezone, { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
+        </span>
+        <span className="pill-light">
+          {fmtTime(now, timezone, { weekday:"long", year:"numeric", month:"long", day:"numeric" })}
+        </span>
+        <span className="pill-green">
+          {(timezone || "UTC").replace(/_/g, " ")}
+        </span>
+      </div>
+    );
+  }
+
+  /* ── API calls (go through Claude artifact proxy — no CORS) ── */
+  async function callClaude(prompt, maxTokens) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: maxTokens,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    if (!res.ok) throw new Error("AI service error (" + res.status + ")");
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || "AI error");
+    const text = data.content.map(b => b.text || "").join("").replace(/```json|```/g, "").trim();
+    return JSON.parse(text);
+  }
+
+  async function validatePlace(input) {
+    const prompt = `User typed "${input}" in a place search. Real place? Fix typos. Flag nonsense.
+ONLY JSON, no markdown:
+{"valid":true,"resolved":"official name","was_corrected":false,"correction_note":null,"suggestions":["A","B","C"],"reason":null}
+Rules:
+- Real place → valid=true, resolved=official name
+- Typo (Mumbay→Mumbai, Paries→Paris, Tokio→Tokyo) → valid=true, was_corrected=true, correction_note="Did you mean X?"
+- Nonsense/not a place → valid=false, reason="short friendly message", suggestions=3 interesting real places`;
+    try { return await callClaude(prompt, 260); }
+    catch { return { valid: true, resolved: input, was_corrected: false, correction_note: null, suggestions: [], reason: null }; }
+  }
+
+  async function fetchPlaceInfo(place) {
+    const prompt = `Geography & history expert. Give detailed info for "${place}".
+ONLY JSON, no markdown:
+{"name":"full official name","country":"country","region":"state or province","timezone":"IANA e.g. Asia/Kolkata","coordinates":"e.g. 18.97 N, 72.83 E","population":"formatted number","area":"in km²","elevation":"above sea level","language":"official language(s)","currency":"name and code","founded":"year or era","about":"3-4 rich engaging sentences about character, culture, uniqueness","facts":["specific interesting fact 1","fact 2","fact 3","fact 4","fact 5"]}`;
+    return await callClaude(prompt, 1000);
+  }
+
+  async function fetchWeather(place) {
+    if (!OWM_KEY || OWM_KEY === "YOUR_OWM_KEY_HERE") throw new Error("no_key");
+    const res = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(place)}&appid=${OWM_KEY}&units=metric`
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Weather API error");
+    return data;
+  }
+
+  /* ── Main App ── */
+  function App() {
+    const [query,    setQuery]   = useState("");
+    const [loading,  setLoading] = useState(false);
+    const [loadMsg,  setLoadMsg] = useState("CHECKING…");
+    const [error,    setError]   = useState(null);
+    const [banner,   setBanner]  = useState(null);
+    const [result,   setResult]  = useState(null);
+    const inputRef = useRef();
+    const wrapRef  = useRef();
+
+    async function explore(override) {
+      const raw = (override ?? query).trim();
+
+      // ── instant validations ──
+      if (!raw) {
+        wrapRef.current?.classList.add("shake");
+        setTimeout(() => wrapRef.current?.classList.remove("shake"), 400);
+        inputRef.current?.focus();
+        return;
+      }
+      if (raw.length < 2) { setError({ type:"short" }); return; }
+      if (/^\d+$/.test(raw)) { setError({ type:"numbers" }); return; }
+
+      setResult(null); setError(null); setBanner(null);
+      setLoading(true); setLoadMsg("CHECKING PLACE NAME…");
+
+      try {
+        // 1. Validate
+        const v = await validatePlace(raw);
+        if (!v.valid) {
+          setError({ type:"notfound", validation: v, input: raw });
+          setLoading(false); return;
+        }
+
+        const place = v.resolved || raw;
+        if (v.was_corrected && v.correction_note) {
+          setBanner({ note: v.correction_note, original: raw, resolved: place });
+        }
+
+        // 2. Fetch info + weather in parallel
+        setLoadMsg("FETCHING DATA…");
+        let weather = null;
+        const [info] = await Promise.all([
+          fetchPlaceInfo(place),
+          fetchWeather(place)
+            .then(d => { weather = d; })
+            .catch(e => { if (e.message !== "no_key") console.warn("Weather:", e.message); })
+        ]);
+
+        setResult({ info, weather });
+
+      } catch(e) {
+        setError({ type:"generic", message: e.message });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function useSuggestion(place) {
+      setQuery(place);
+      explore(place);
+    }
+
+    function resetSearch() {
+      setError(null);
+      setTimeout(() => { inputRef.current?.select(); inputRef.current?.focus(); }, 50);
+    }
+
+    return (
+      <div className="page">
+
+        {/* ── Header ── */}
+        <header className="site-header">
+          <h1 className="site-title">Place <em>Explorer</em></h1>
+          <p className="site-sub">Weather · Location · History · Live Time</p>
+
+          <div className="search-wrap" ref={wrapRef}>
+            <input
+              ref={inputRef}
+              className="search-input"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && explore()}
+              placeholder="Enter any place — city, country, region…"
+              autoComplete="off"
+            />
+            <button className="search-btn" onClick={() => explore()} disabled={loading}>
+              {loading ? "…" : "Explore"}
+            </button>
+          </div>
+        </header>
+
+        {/* ── Loading ── */}
+        {loading && (
+          <div className="loader-wrap">
+            <div className="spinner" />
+            <div className="load-msg">{loadMsg}</div>
+          </div>
+        )}
+
+        {/* ── Correction banner ── */}
+        {!loading && banner && (
+          <div className="banner">
+            ✏️ {banner.note}
+            <div className="banner-sub">
+              Showing results for <strong>{banner.resolved}</strong> — not "{banner.original}"
+            </div>
+          </div>
+        )}
+
+        {/* ── Error states ── */}
+        {!loading && error && (
+          <div className="nf-card fade-up">
+            {error.type === "short" && <>
+              <div className="nf-icon">✏️</div>
+              <div className="nf-title">Too short</div>
+              <p className="nf-msg">Please enter at least 2 characters.</p>
+            </>}
+
+            {error.type === "numbers" && <>
+              <div className="nf-icon">🔢</div>
+              <div className="nf-title">Numbers aren't places</div>
+              <p className="nf-msg">Try a city or country name instead.</p>
+              <div className="nf-label">Popular places to explore:</div>
+              <div className="sug-row">
+                {["Tokyo", "Paris", "Cairo"].map(p =>
+                  <button key={p} className="sug-btn" onClick={() => useSuggestion(p)}>📍 {p}</button>
+                )}
+              </div>
+            </>}
+
+            {error.type === "notfound" && <>
+              <div className="nf-icon">🗺️</div>
+              <div className="nf-title">Place not recognised</div>
+              <p className="nf-msg">
+                {error.validation?.reason ||
+                  <>We couldn't find <strong>"{error.input}"</strong> as a real place. Check spelling and try again.</>}
+              </p>
+              {error.validation?.suggestions?.length > 0 && <>
+                <div className="nf-label">Try one of these instead:</div>
+                <div className="sug-row">
+                  {error.validation.suggestions.slice(0,3).map(p =>
+                    <button key={p} className="sug-btn" onClick={() => useSuggestion(p)}>📍 {p}</button>
+                  )}
+                </div>
+              </>}
+              <button className="retry-btn" onClick={resetSearch}>← Try a different name</button>
+            </>}
+
+            {error.type === "generic" && <>
+              <div className="nf-icon">⚡</div>
+              <div className="nf-title">Something went wrong</div>
+              <p className="nf-msg">{error.message}</p>
+              <button className="retry-btn" onClick={() => explore()}>↻ Try again</button>
+            </>}
+          </div>
+        )}
+
+        {/* ── Results ── */}
+        {!loading && result && (
+          <div className="fade-up">
+
+            {/* Hero */}
+            <div className="place-hero">
+              <div className="place-name">{result.info.name}</div>
+              <div className="place-region">
+                {[result.info.region, result.info.country].filter(Boolean).join(", ")}
+              </div>
+              <LiveClock timezone={result.info.timezone} />
+            </div>
+
+            <div className="grid2">
+
+              {/* Weather */}
+              <div className="card">
+                <div className="card-head"><span>🌤</span> Current Weather</div>
+                {result.weather ? (
+                  <>
+                    <div className="w-big">
+                      <div className="w-emoji">{weatherEmoji(result.weather.weather[0].id)}</div>
+                      <div>
+                        <div className="w-temp">{Math.round(result.weather.main.temp)}°C</div>
+                        <div className="w-cond">{result.weather.weather[0].description}</div>
+                      </div>
+                    </div>
+                    <div className="w-grid">
+                      {[
+                        ["Feels Like",  `${Math.round(result.weather.main.feels_like)}°C`],
+                        ["Humidity",    `${result.weather.main.humidity}%`],
+                        ["Wind",        `${Math.round(result.weather.wind.speed * 3.6)} km/h`],
+                        ["Pressure",    `${result.weather.main.pressure} hPa`],
+                        ["Visibility",  result.weather.visibility ? `${(result.weather.visibility/1000).toFixed(1)} km` : "—"],
+                        ["Cloud Cover", `${result.weather.clouds.all}%`],
+                      ].map(([l, v]) => (
+                        <div key={l} className="w-stat">
+                          <div className="w-sl">{l}</div>
+                          <div className="w-sv">{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p style={{ color:"#5a5248", fontSize:".84rem", lineHeight:1.65 }}>
+                    Paste your <strong>OpenWeatherMap</strong> key into{" "}
+                    <code style={{ background:"#f5f0e8", padding:"1px 6px", borderRadius:4 }}>OWM_KEY</code>{" "}
+                    near the top of <strong>index.html</strong>.<br />
+                    <span style={{ fontSize:".76rem", opacity:.7 }}>New keys take up to 2 hours to activate.</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Location */}
+              <div className="card">
+                <div className="card-head"><span>📍</span> Location Info</div>
+                {[
+                  ["Country",     result.info.country],
+                  ["Region",      result.info.region],
+                  ["Coordinates", result.info.coordinates],
+                  ["Timezone",    result.info.timezone],
+                  ["Population",  result.info.population],
+                  ["Area",        result.info.area],
+                  ["Elevation",   result.info.elevation],
+                  ["Language",    result.info.language],
+                  ["Currency",    result.info.currency],
+                  ["Founded",     result.info.founded],
+                ].filter(([,v]) => v && v !== "N/A" && v !== "Unknown").map(([k, v]) => (
+                  <div key={k} className="info-row">
+                    <span className="ik">{k}</span>
+                    <span className="iv">{v}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Historical Facts */}
+              <div className="card full">
+                <div className="card-head"><span>📜</span> Historical Facts</div>
+                <ul className="facts">
+                  {(result.info.facts || []).map((f, i) => <li key={i}>{f}</li>)}
+                </ul>
+              </div>
+
+              {/* About */}
+              <div className="card full">
+                <div className="card-head"><span>✦</span> About This Place</div>
+                <div className="about">
+                  {(result.info.about || "").split(/\n+/).filter(Boolean).map((p, i) => (
+                    <p key={i}>{p}</p>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
