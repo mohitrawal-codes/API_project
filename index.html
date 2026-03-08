@@ -167,7 +167,6 @@
       return {
         population: c.population?.toLocaleString(),
         area: c.area ? c.area.toLocaleString() + ' km²' : null,
-        languages: c.languages ? Object.values(c.languages).join(', ') : null,
         currency: c.currencies ? Object.values(c.currencies).map(x => `${x.name} (${x.symbol||''})`).join(', ') : null,
         capital: c.capital?.[0] || null,
         subregion: c.subregion || c.region || null,
@@ -204,7 +203,6 @@
       ['Timezone',    tz],
       ['Population',  country.population],
       ['Area',        country.area],
-      ['Language',    country.languages],
       ['Currency',    country.currency],
       ['Capital',     country.capital],
       ['Region',      country.subregion],
